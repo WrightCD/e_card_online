@@ -2,8 +2,88 @@
 <html>
 <head>
     <title>Kaiji E-Card Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+        }
+
+        #hand button {
+            margin: 10px;
+            padding: 15px 25px;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        #scores, #result {
+            margin-top: 20px;
+            font-size: 18px;
+        }
+
+        button#startButton {
+            margin-top: 30px;
+            font-size: 18px;
+            padding: 10px 20px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Placeholder Title</h1>
+    <h1>Kaiji E-Card Game</h1>
+
+    <div id="hand"></div>
+
+    <div id="result"></div>
+
+    <div id="scores">Player: 0 | CPU: 0</div>
+
+    <button id="startButton" onclick="startGame()">Start Game</button>
+
+    <script>
+        let remainingHand = [];
+
+        async function startGame() {
+            const response = await fetch('/start', { method: 'POST' });
+            const data = await response.json();
+            remainingHand = data.p1_hand;
+            updateHandUI();
+            document.getElementById('result').innerText = '';
+            document.getElementById('scores').innerText = 'Player: 0 | CPU: 0';
+        }
+
+        function updateHandUI() {
+            const handDiv = document.getElementById('hand');
+            handDiv.innerHTML = '';
+            remainingHand.forEach(card => {
+                const btn = document.createElement('button');
+                btn.innerText = card;
+                btn.onclick = () => playCard(card);
+                handDiv.appendChild(btn);
+            });
+        }
+
+        async function playCard(card) {
+            const response = await fetch('/play', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ card: card })
+            });
+
+            const data = await response.json();
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+
+            remainingHand = data.remaining_player_hand;
+            updateHandUI();
+
+            document.getElementById('result').innerText =
+                `You played: ${data.p1_card}, CPU played: ${data.cpu_card}. Winner: ${data.winner}`;
+
+            document.getElementById('scores').innerText =
+                `Player: ${data.player_score} | CPU: ${data.cpu_score}`;
+        }
+    </script>
 </body>
 </html>

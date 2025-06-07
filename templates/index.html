@@ -7,8 +7,11 @@
             font-family: Arial, sans-serif;
             text-align: center;
             padding: 20px;
+            background-image: url("../../static/background/background_image.png");
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            background-size: 100% 100%;
         }
-
         .card-img {
             height: 200px;
             margin: 10px;
@@ -16,29 +19,70 @@
             border: 2px solid transparent;
             transition: transform 0.2s, border-color 0.2s;
         }
-
         .card-img:hover {
             transform: scale(1.05);
             border-color: #333;
         }
-
         .played-cards {
             margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            align-items: flex-start;
         }
-
+        .played-card-wrapper {
+            text-align: center;
+        }
+        .played-card-wrapper b {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 18px;
+        }
         .grayed-out {
             filter: grayscale(100%) brightness(60%);
         }
-
         #scores, #result {
             margin-top: 20px;
             font-size: 18px;
         }
-
+        #currentBet {
+            margin-top: 20px;
+            font-size: 20px;
+            font-weight: bold;
+        }
+        #hand {
+            margin-top: 20px;
+        }
         button#startButton {
             margin-top: 30px;
             font-size: 18px;
             padding: 10px 20px;
+        }
+        button#resetButton {
+            margin-top: 30px;
+            font-size: 18px;
+            padding: 10px 20px;
+        }
+        #toggleRules {
+            margin-top: 20px;
+            font-size: 16px;
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+        #rulesText {
+            margin-top: 15px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            font-size: 14px;
+            color: #444;
+            line-height: 1.5;
+            display: none; /* hidden by default */
+            text-align: left;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: #f9f9f9;
         }
     </style>
 </head>
@@ -47,16 +91,34 @@
 
     <div id="playedCards" class="played-cards"></div>
 
+    <div id="currentBet"></div>
+
     <div id="hand"></div>
-
     <div id="result"></div>
-
     <div id="scores">Player: 0 | CPU: 0</div>
-
+    <div id="wallet">Wallet: $0</div>
     <button id="startButton" onclick="startGame()">Start Game</button>
+    <button id="resetButton" onclick="resetGame()">Reset Game</button><br>
+    <button id="toggleRules" onclick="toggleRules()">Show Rules</button>
+
+    <div id="rulesText">
+        E-Card is based on the game from the cult classic gambling anime Kaiji: Ultimate Survivor.
+        The rules are simple. You will bet money and alternate between slave and emperor hands each round.
+        Winning with a slave hand pays out four times more than winning as an emperor hand due to the difficulty of such
+        a feat. Of course in true gambling nature you lose when you run out of money but it's up to you when you've won
+        enough.<br>
+        Playing an Emperor card will defeat a Citizen card due to power of a ruler.</br>
+        Playing a Citizen card will defeat a Slave card due to the ruthless class struggle.</br>
+        Citizens against Citizens is the natural state and will not end the round.</br>
+        But Playing a Slave Card will defeat the Emperor as they have nothing more to lose.</br>
+        Enjoy!
+    </div>
 
     <script>
         let remainingHand = [];
+        let gameActive = true;
+        let roundNumber = 0;
+        let currentBet = 100;
 
         const cardImages = {
             'K': '/static/cards/emperor.png',
@@ -65,13 +127,62 @@
         };
 
         async function startGame() {
-            const response = await fetch('/start', { method: 'POST' });
+            if (!gameActive) return;
+
+            let bet = 100;
+            if (roundNumber > 0) {
+                bet = await promptForValidBet();
+                if (!gameActive) return;
+            }
+
+            currentBet = bet;
+
+            const response = await fetch('/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bet: bet })
+            });
+
             const data = await response.json();
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+
+            roundNumber++;
             remainingHand = data.p1_hand;
             updateHandUI();
             document.getElementById('result').innerText = '';
-            document.getElementById('scores').innerText =  `Player: ${data.player_score} | CPU: ${data.cpu_score}`;
+            document.getElementById('scores').innerText = `Player: ${data.player_score} | CPU: ${data.cpu_score}`;
+            document.getElementById('wallet').innerText = `Wallet: $${parseFloat(data.wallet).toFixed(2)}`;
             document.getElementById('playedCards').innerHTML = '';
+            updateCurrentBetUI();
+        }
+
+        async function promptForValidBet() {
+            while (true) {
+                let input = prompt("Enter your bet amount (e.g. 100.00):", "100");
+                if (input === null) {
+                    alert("Game cancelled.");
+                    gameActive = false;
+                    return null;
+                }
+
+                let bet = parseFloat(parseFloat(input).toFixed(2));
+                if (isNaN(bet) || bet <= 0.01) {
+                    alert("Invalid input. Please enter a number greater than 0.");
+                    continue;
+                }
+
+                const walletText = document.getElementById('wallet').innerText;
+                const walletAmount = parseFloat(walletText.replace(/[^0-9.]/g, ''));
+                if (bet > walletAmount) {
+                    alert("Insufficient funds. Please enter a lower bet.");
+                    continue;
+                }
+
+                return bet;
+            }
         }
 
         function updateHandUI() {
@@ -86,60 +197,106 @@
             });
         }
 
+        function updateCurrentBetUI() {
+            document.getElementById('currentBet').innerText = `Current Bet: $${currentBet.toFixed(2)}`;
+        }
+
         async function playCard(card) {
-    const response = await fetch('/play', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ card: card })
-    });
+            const response = await fetch('/play', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ card: card })
+            });
 
-    const data = await response.json();
-    if (data.error) {
-        alert(data.error);
-        return;
-    }
+            const data = await response.json();
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
 
-    remainingHand = data.remaining_player_hand;
-    updateHandUI();
+            remainingHand = data.remaining_player_hand;
+            updateHandUI();
 
-    document.getElementById('result').innerText =
-        `You played: ${card}, CPU played: ${data.cpu_card}. Winner: ${data.winner}`;
+            if (data.winner === 'draw') {
+                document.getElementById('result').innerText = '';
+            } else {
+                document.getElementById('result').innerText = `WINNER: ${data.winner.toUpperCase()}`;
+            }
 
-    document.getElementById('scores').innerText =
-        `Player: ${data.player_score} | CPU: ${data.cpu_score}`;
+            document.getElementById('scores').innerText =
+                `Player: ${data.player_score} | CPU: ${data.cpu_score}`;
+            document.getElementById('wallet').innerText = `Wallet: $${parseFloat(data.wallet).toFixed(2)}`;
 
-    const playerCard = document.createElement('img');
-    const cpuCard = document.createElement('img');
+            const playedDiv = document.getElementById('playedCards');
+            playedDiv.innerHTML = '';
 
-    playerCard.src = cardImages[card];
-    cpuCard.src = cardImages[data.cpu_card];
+            const playerWrapper = document.createElement('div');
+            playerWrapper.className = 'played-card-wrapper';
+            const playerLabel = document.createElement('b');
+            playerLabel.innerText = 'Player';
+            const playerCard = document.createElement('img');
+            playerCard.src = cardImages[card];
+            playerCard.className = 'card-img';
+            if (data.winner === 'cpu') playerCard.classList.add('grayed-out');
+            playerWrapper.appendChild(playerLabel);
+            playerWrapper.appendChild(playerCard);
 
-    playerCard.className = 'card-img';
-    cpuCard.className = 'card-img';
+            const cpuWrapper = document.createElement('div');
+            cpuWrapper.className = 'played-card-wrapper';
+            const cpuLabel = document.createElement('b');
+            cpuLabel.innerText = 'CPU';
+            const cpuCard = document.createElement('img');
+            cpuCard.src = cardImages[data.cpu_card];
+            cpuCard.className = 'card-img';
+            if (data.winner === 'player') cpuCard.classList.add('grayed-out');
+            cpuWrapper.appendChild(cpuLabel);
+            cpuWrapper.appendChild(cpuCard);
 
-    if (data.winner === 'player') {
-        cpuCard.classList.add('grayed-out');
-    } else if (data.winner === 'cpu') {
-        playerCard.classList.add('grayed-out');
-    } else if (data.winner === 'draw') {
-        playerCard.classList.add('drawn-card');
-        cpuCard.classList.add('drawn-card');
-    }
+            playedDiv.appendChild(playerWrapper);
+            playedDiv.appendChild(cpuWrapper);
 
-    const playedDiv = document.getElementById('playedCards');
-    playedDiv.innerHTML = '<h3>Played Cards</h3>';
-    playedDiv.appendChild(playerCard);
-    playedDiv.appendChild(cpuCard);
+            updateCurrentBetUI();
 
-    // Auto-reset if a special card was played
-    if (['K', 'S'].includes(card) || ['K', 'S'].includes(data.cpu_card)) {
-        setTimeout(() => {
-            alert("Round complete. Starting next round...");
-            startGame();
-        }, 1000);
-    }
-}
+            if (['K', 'S'].includes(card) || ['K', 'S'].includes(data.cpu_card)) {
+                setTimeout(() => {
+                    const cont = confirm("Round complete. Do you want to continue?");
+                    if (cont) {
+                        startGame();
+                    } else {
+                        gameActive = false;
+                        alert("Thanks for playing!");
+                    }
+                }, 1000);
+            }
+        }
 
+        function resetGame() {
+            fetch('/reset', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    roundNumber = 0;
+                    gameActive = true;
+                    remainingHand = [];
+                    updateHandUI();
+                    document.getElementById('result').innerText = '';
+                    document.getElementById('scores').innerText = `Player: 0 | CPU: 0`;
+                    document.getElementById('wallet').innerText = `Wallet: $${parseFloat(data.wallet).toFixed(2)}`;
+                    document.getElementById('playedCards').innerHTML = '';
+                    alert("Game has been reset.");
+                });
+        }
+
+        function toggleRules() {
+            const rulesDiv = document.getElementById('rulesText');
+            const toggleBtn = document.getElementById('toggleRules');
+            if (rulesDiv.style.display === 'none' || rulesDiv.style.display === '') {
+                rulesDiv.style.display = 'block';
+                toggleBtn.innerText = 'Hide Rules';
+            } else {
+                rulesDiv.style.display = 'none';
+                toggleBtn.innerText = 'Show Rules';
+            }
+        }
     </script>
 </body>
 </html>

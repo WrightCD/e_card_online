@@ -9,11 +9,25 @@
             padding: 20px;
         }
 
-        #hand button {
+        .card-img {
+            height: 200px;
             margin: 10px;
-            padding: 15px 25px;
-            font-size: 20px;
             cursor: pointer;
+            border: 2px solid transparent;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .card-img:hover {
+            transform: scale(1.05);
+            border-color: #333;
+        }
+
+        .played-cards {
+            margin-top: 20px;
+        }
+
+        .grayed-out {
+            filter: grayscale(100%) brightness(60%);
         }
 
         #scores, #result {
@@ -31,6 +45,8 @@
 <body>
     <h1>Kaiji E-Card Game</h1>
 
+    <div id="playedCards" class="played-cards"></div>
+
     <div id="hand"></div>
 
     <div id="result"></div>
@@ -42,48 +58,88 @@
     <script>
         let remainingHand = [];
 
+        const cardImages = {
+            'K': '/static/cards/emperor.png',
+            'C': '/static/cards/citizen.png',
+            'S': '/static/cards/slave.png',
+        };
+
         async function startGame() {
             const response = await fetch('/start', { method: 'POST' });
             const data = await response.json();
             remainingHand = data.p1_hand;
             updateHandUI();
             document.getElementById('result').innerText = '';
-            document.getElementById('scores').innerText = 'Player: 0 | CPU: 0';
+            document.getElementById('scores').innerText =  `Player: ${data.player_score} | CPU: ${data.cpu_score}`;
+            document.getElementById('playedCards').innerHTML = '';
         }
 
         function updateHandUI() {
             const handDiv = document.getElementById('hand');
             handDiv.innerHTML = '';
             remainingHand.forEach(card => {
-                const btn = document.createElement('button');
-                btn.innerText = card;
-                btn.onclick = () => playCard(card);
-                handDiv.appendChild(btn);
+                const img = document.createElement('img');
+                img.src = cardImages[card];
+                img.className = 'card-img';
+                img.onclick = () => playCard(card);
+                handDiv.appendChild(img);
             });
         }
 
         async function playCard(card) {
-            const response = await fetch('/play', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ card: card })
-            });
+    const response = await fetch('/play', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ card: card })
+    });
 
-            const data = await response.json();
-            if (data.error) {
-                alert(data.error);
-                return;
-            }
+    const data = await response.json();
+    if (data.error) {
+        alert(data.error);
+        return;
+    }
 
-            remainingHand = data.remaining_player_hand;
-            updateHandUI();
+    remainingHand = data.remaining_player_hand;
+    updateHandUI();
 
-            document.getElementById('result').innerText =
-                `You played: ${data.p1_card}, CPU played: ${data.cpu_card}. Winner: ${data.winner}`;
+    document.getElementById('result').innerText =
+        `You played: ${card}, CPU played: ${data.cpu_card}. Winner: ${data.winner}`;
 
-            document.getElementById('scores').innerText =
-                `Player: ${data.player_score} | CPU: ${data.cpu_score}`;
-        }
+    document.getElementById('scores').innerText =
+        `Player: ${data.player_score} | CPU: ${data.cpu_score}`;
+
+    const playerCard = document.createElement('img');
+    const cpuCard = document.createElement('img');
+
+    playerCard.src = cardImages[card];
+    cpuCard.src = cardImages[data.cpu_card];
+
+    playerCard.className = 'card-img';
+    cpuCard.className = 'card-img';
+
+    if (data.winner === 'player') {
+        cpuCard.classList.add('grayed-out');
+    } else if (data.winner === 'cpu') {
+        playerCard.classList.add('grayed-out');
+    } else if (data.winner === 'draw') {
+        playerCard.classList.add('drawn-card');
+        cpuCard.classList.add('drawn-card');
+    }
+
+    const playedDiv = document.getElementById('playedCards');
+    playedDiv.innerHTML = '<h3>Played Cards</h3>';
+    playedDiv.appendChild(playerCard);
+    playedDiv.appendChild(cpuCard);
+
+    // Auto-reset if a special card was played
+    if (['K', 'S'].includes(card) || ['K', 'S'].includes(data.cpu_card)) {
+        setTimeout(() => {
+            alert("Round complete. Starting next round...");
+            startGame();
+        }, 1000);
+    }
+}
+
     </script>
 </body>
 </html>
